@@ -1,0 +1,57 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(workflows)
+library(tune)
+library(ranger)
+library(glmnet)
+```
+
+```{r}
+iris_split = iris %>% initial_split(0.8)
+iris_train = training(iris_split)
+iris_test = testing(iris_split)
+
+# recipe
+rand_forest_recipe = recipe(
+    Petal.Width ~ Petal.Length,
+    data = iris_train
+)
+# Model
+rand_forest_model = rand_forest(
+    mode = "regression",
+    mtry = tune(),
+    trees = tune()
+  ) %>% set_engine("ranger")
+# workflow
+rand_forest_wkflow <- workflow() %>% add_recipe(rand_forest_recipe) %>% add_model(rand_forest_model)
+# parameters
+rand_forest_params <- parameters(rand_forest_model)
+rand_forest_params$object[[1]]$range$upper = i
+grid_form = tune_bayes(
+  object = rand_forest_wkflow,
+  resamples = bootstraps(iris_train, times = 10),
+  iter = 10,
+  param_info = rand_forest_params,
+  metrics = metric_set(rmse),
+  initial = 3,
+  control =  control_bayes(no_improve = 5, verbose = TRUE, save_pred = TRUE)
+)
+# create actual model
+mod = rand_forest(
+  mode = "regression",
+  mtry = show_best(grid_form, metric = "rmse") %>% head(1) %>% pull(mtry),
+  trees = show_best(grid_form, metric = "rmse") %>% head(1) %>% pull(trees)
+) %>%
+set_engine("ranger") %>%
+fit(
+  as.formula(paste0(response, " ~ ", paste(get_top_n_variables(top_preds, i), collapse = "+"))),
+  data = iris_train
+)
+```
+
